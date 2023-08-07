@@ -1,0 +1,295 @@
+#!/bin/bash
+#set -ex
+#Usage:
+#bash sudo OpenImage.sh Mountpoint[Variable/String] [/path/to/system/image]
+
+if [ "$(whoami)" != "root" ]; then
+	echo  "You are not root!!!"
+	echo "Usage:"
+	echo "sudo bash OpenImage.sh /path/to/system/image" like 'lineage-*-arm64_bvS.img'
+	exit
+fi
+
+if [ ! -e "$1" ]; then
+	echo "Error: No Image!"
+	echo "/path/to/system/image Faulty or Missing!"
+	
+	exit
+fi
+
+echo "Type 'm' für mount image"
+echo "Type 'u' für unmount image"
+echo "Type 'a' für mount and umount image for change"
+read _run
+#echo "$1"
+
+touch .Imagename && echo "$1" > .Imagename
+date=$(date '+%Y-%m-%d')
+Image="$(cat .Imagename)"
+BaseName="$(basename $Image .img)"
+DirName="Dir_$BaseName"
+MountImg="Mount_$BaseName"
+NewImage="$date-$BaseName"
+
+# here the removable apps
+remApps="EasterEgg 
+webview
+HTMLViewer 
+PrintSpooler 
+Jelly
+Recorder 
+Eleven 
+ExactCalculator 
+QuickSearchBox
+Calendar 
+Gallery2 
+Browser2
+AudioFX "
+#Etar 
+#Contacts
+#Camera2 
+#DeskClock
+
+check_gsi () {
+	# Make sure to grab the specific GSI package according to your device’s architecture. 
+	echo "Check GSI"
+	adb shell getprop ro.product.cpu.abi
+	}
+
+remove_apps() {
+	echo ""
+	echo "This Apps will remove: $remApps"
+	echo "Remove default Apps and make the new System clean? y/n or a for all"
+	read _remove
+	if [ "$_remove" = "a" ]; then
+		for i in $remApps; do
+			find $Dir_Name -name $i -exec echo {} \;
+			find $Dir_Name -name $i -exec rm -rfd {} \;
+		done
+	fi
+	if [ "$_remove" = "y" ]; then
+		for i in $remApps; do
+			echo "Remove $i? y/n"
+			find $Dir_Name -name $i -exec echo {} \;
+			read go
+			if [ "$go" = "y" ]; then
+				find $Dir_Name -name $i -exec rm -rfd {} \;
+			fi
+		done
+	fi
+	}
+
+removeSU () {
+	echo ""
+	echo "Remove phh-su? y/n"
+	read _remove
+	if [ "$_remove" = "y" ]; then
+		touch $DirName/system/phh/secure
+		rm $DirName/system/xbin/su
+		rm $DirName/system/bin/phh-su
+		rm $DirName/system/etc/init/su.rc
+		rm $DirName/system/bin/phh-securize.sh
+		rm -Rf $DirName/system/{app,priv-app}/me.phh.superuser/
+	fi
+}
+
+replace_hosts () {
+	# my hosts file https://raw.githubusercontent.com/Klaus-Thaler/Klaus-Thaler/main/hosts
+	echo ""
+	echo "Replace file 'hosts' with IP Blocker? y/n"
+	read _replace
+	if [ "$_replace" = "y" ]; then
+		if [ -f hosts ]; then 
+			rm -f hosts
+			wget https://raw.githubusercontent.com/Klaus-Thaler/Klaus-Thaler/main/hosts
+		fi
+		cp ./hosts $DirName/system/etc/
+		echo ""
+		echo "file 'hosts' now has "$(wc -l < $DirName/system/etc/hosts)" lines"
+	fi
+	}
+
+installApks () {
+	echo ""
+	echo "Install F-Droid extra privileg? y/n"
+	read _install
+	if [ "$_install" = "y" ]; then
+		APK="FDroidPrivilegedExtension"
+		DEST=$DirName/system/priv-app
+		cp -rf ./extraApps/$APK $DEST/$APK
+		chown -R 0.0 $DEST/$APK
+		chmod -R 755 $DEST/$APK
+		echo "FDroidPrivilegedExtension"
+		ls -la $DEST/$APK
+		
+		cat << EOF > $DirName/system/product/etc/permissions/privapp-permissions-org.fdroid.fdroid.privileged.xml
+<?xml version="1.0" encoding="utf-8"?>
+<permissions>
+    <privapp-permissions package="org.fdroid.fdroid.privileged">
+        <permission name="android.permission.DELETE_PACKAGES"/>
+        <permission name="android.permission.INSTALL_PACKAGES"/>
+    </privapp-permissions>
+</permissions>
+EOF
+	fi
+	}
+
+replace_bootanimation() {
+	_file=$(find $DirName -name bootanimation.zip)
+	if [ -e "$_file" ]; then 
+		echo -e "\nIf a custom boot animation was created and"
+		echo -e "placed in this directory as bootanimation.zip,"
+		echo -e "this can be replaced. \n"
+		echo "Replace the boot animation? y/n"
+		#echo "Find this bootanimation: "$_file
+		read
+		if [ "${REPLY}" = "y" ]; then
+			cp -f bootanimation.zip $_file
+		fi
+	fi
+	}
+
+copy_to_mobil() {
+	echo ""
+	while :; do
+		detect_adb
+		if [ "$DEVICE_id" != "" ] ; then break; fi
+		echo "No Devices over adb detected"
+		echo "Stop. Now activate adb and continue with <Enter>."
+		echo "Type 'e' for exit. The name of the new system image is '$NewImage.img(.zip|.xz)'"
+		read
+		if [ "${REPLY}" = "e" ]; then
+			exit 0
+		fi
+	done
+	z=0
+	list=$(adb shell ls /storage)
+	for i in $list; do storage+=("$i"); echo "$z -> $i"; ((z++)); done
+	echo ""
+	echo "Dial the number for the destination on your mobile (1, 2, 3,...)."
+	echo "The sd-card is probably a number code."
+	read reply_st
+	if [ "$reply_st" != "" ]; then
+		adb push Disable_Dm-Verity_ForceEncrypt_03.04.2020.zip /storage/${storage[$reply_st]}		
+	fi
+	echo "Do you have a custom recovery (twrp) or do you want to flash with fastboot?"
+	echo "Type 'c' for transfer to sd card via adb."
+	echo "Type 'f' for flash with fastboot."
+	read 
+	if [ "${REPLY}" = "c" ]; then
+		if [ "$reply_st" != "" ]; then
+			adb push vbmeta.img /storage/${storage[$reply_st]}
+			adb push $NewImage.img /storage/${storage[$reply_st]} && adb reboot recovery		
+		fi
+	fi
+	if [ "${REPLY}" = "f" ]; then
+		adb reboot fastboot
+		sleep 1
+		fastboot flash system $NewImage.img
+	fi
+}
+
+zip_image () {
+	echo "Compress the image additionally and exit?"
+	echo "Type 'z' for zip or 'x' for xz."
+	read _compress
+	if [ "$_compress" == "x" ]; then
+		xz -k -f -v $NewImage.img
+	fi
+	if [ "$_compress" == "z" ]; then
+		zip -q $NewImage.img.zip $NewImage.img
+	fi
+	}
+	
+detect_adb () {
+	echo ""
+	DEVICE_model=$(adb shell getprop ro.product.vendor.model 2> /dev/null) 
+	DEVICE_system=$(adb shell getprop ro.product.system_ext.device 2> /dev/null)
+	DEVICE_id=$(adb devices | grep "device$" | sed -e "s|device||g" 2> /dev/null)
+	echo "Model: $DEVICE_model"
+	echo "System: $DEVICE_system"
+	echo "ID: $DEVICE_id"
+	echo ""
+	echo "This devivce is '$(adb shell getprop ro.product.cpu.abi)'."
+	echo ""
+	}
+
+mount_image () {
+	#cleanups
+	umount $DirName &> /dev/null
+	echo "MOUNT"
+	rm -Rf tmp $BaseName1
+	mkdir -p tmp $DirName
+	simg2img $Image $MountImg.img || cp $Image $MountImg.imgg
+	e2fsck -n $MountImg.img > /dev/null
+	if [ $? -eq 0 ]; then 
+		echo "Image I.img okay"
+		e2fsck -y -f $MountImg.img
+		resize2fs $MountImg.img 3500M
+		e2fsck -E unshare_blocks -y -f $MountImg.img
+		mount -o loop,rw $MountImg.img $DirName
+	fi
+
+	e2fsck -n $MountImg.imgg > /dev/null
+	if [ $? -eq 0 ]; then 
+		echo "Image I.imgg okay"
+		e2fsck -y -f $MountImg.img
+		resize2fs $MountImg.imgg 3500M
+		e2fsck -E unshare_blocks -y -f $MountImg.imgg
+		mount -o loop,rw $MountImg.imgg $DirName
+	fi
+	}
+
+u_mount_image () {
+	remove_apps
+	removeSU
+	replace_hosts
+	replace_bootanimation
+	installApks
+		
+	echo -e "\nPause. Controll yor changes."
+	read
+	
+	echo "UnMount"
+	umount $DirName
+	sleep 1
+	
+	touch $NewImage.img
+	
+	echo "Write changes? y/n"
+	read _change
+	if [ "$_change" != "y" ]; then exit; fi 
+		e2fsck -n $MountImg.img > /dev/null
+		if [ $? -eq 0 ]; then 
+			e2fsck -f -y $MountImg.img || true
+			resize2fs -M $MountImg.img
+			sleep 1
+			cp $MountImg.img $NewImage.img
+		fi
+		e2fsck -n $MountImg.imgg > /dev/null
+		if [ $? -eq 0 ]; then 
+			e2fsck -f -y $MountImg.imgg || true
+			resize2fs -M $MountImg.imgg
+			sleep 1
+			cp $MountImg.imgg $NewImage.img
+		fi
+	sleep 1
+	rm -f Mount_*.img*
+	rm -r Dir_*
+	echo ""
+	zip_image
+	copy_to_mobil
+	}
+
+if [ "$_run" = "m" ]; then
+	mount_image;
+elif [ "$_run" = "u" ]; then
+	u_mount_image;
+elif [ "$_run" = "a" ]; then
+	mount_image;
+	u_mount_image;
+fi 
+
+echo "fine"
+
+exit
