@@ -1,0 +1,98 @@
+#!/bin/bash
+
+usage="Usage: 
+- First argument: the gif
+- Second argument: the directory where the images should be stored (example: part0)
+- Third argument: the width of the image (example: 540(x540))
+-----------------------------------------
+Sample: sample.gif Dir 1080"
+
+if ! [ -x "$(command -v gm)" ]; then
+    echo "The command 'gm' was not found, but can be installed with:"
+    echo "sudo apt install graphicsmagick"
+    exit 1
+fi
+
+if [ $# -lt 3 ]; then echo "Not enough arguments - exiting"; echo -e "$usage"; exit 1; fi
+
+if [ "$(egrep -c 'GIF' $1)" = "0" ]; then echo "$1 is not a GIF!"; exit -1; fi
+
+echo "Los geht's ...."
+
+# kein Verzeichnis erstellt?
+if [ -d "$2" ]; then 
+	echo -e "Write in $2 ...  \and this can take time ..."; 
+else 
+	echo "Create directory $2? Y/n";
+	read
+	if [ "${REPLY}" = "Y" ]; then mkdir $2; else exit 0; fi 
+fi
+
+# einzelen Bilder aus gif
+gm convert ${1} -coalesce +adjoin "$2/%0d.png"
+
+cd $2
+for file in *; do
+	# echo "$file ist $(file $file)"
+	# resize falls noetig
+	# 1624 x 540 ist lineage
+	# echo "resize $file to $3 solution"
+	convert $file -resize $3! $file;	
+	# Nullen voran	
+	i=${#file}
+	cfile=$file
+	while [ $i -le 8 ]; do
+		new="0${cfile}"
+		mv -f $cfile $new
+		cfile=$new
+		((i++))
+	done
+	
+	# Entfernen aller Metadaten 
+	echo $new
+	exiftool -all= $new &> /dev/null
+	rm "${new}_original" &> /dev/null
+	#chown root:root $new
+	#chmod 644 $new
+done
+
+echo "Delete every second image to reduce content? Y/n"
+read
+if [ "${REPLY}" = "Y" ]; then
+	# nur jedes zweite Bild, ansonsten wird es zu gross
+	for file in *; do
+		((z++))
+		let RES=$z%2;
+		if [ $RES == 0 ]; then 
+			rm -f $file;
+		fi; 
+	done
+fi
+
+cd ..
+
+echo "Creat a bootanimation? Y/n"
+read
+if [ "${REPLY}" = "Y" ]; then 
+	echo "Geschwindigkeit? (frames per seconds)"
+	echo "Useful is =< 60"
+	read fps
+	w=$(identify -format "%w" ${2}/00000.png)
+	h=$(identify -format "%h" ${2}/00000.png)
+	touch desc.txt
+	echo "$w $h $fps" > desc.txt
+	echo "p 0 0 $2" >> desc.txt
+	zip -r -0 bootanimation.zip desc.txt $2
+else
+	exit 0;
+fi
+
+echo "test as gif"
+convert -delay 10 -loop 0 $2/*.png test_$1
+firefox test_$1
+
+# zip für bootanimation
+# zip -r -0 bootanimation.zip desc.txt part0 part1 part2
+# oder mit p7zip-desktop
+
+echo "fine"
