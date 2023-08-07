@@ -1,0 +1,228 @@
+#!/bin/bash
+set +e
+
+echo -n "
+ install apps from Droid Repos 
+ -------------------------
+ "
+
+if [ $((`adb devices | grep -o "device" | wc -l`)) -ne 2 ]; then
+	echo "please enable adb for exactly one device";
+	exit;
+fi
+
+rm -Rf apk_bin > /dev/null
+mkdir -p apk_bin
+
+#downloadFromRepo packageName overrides
+downloadFromRepo() {
+	mkdir -p apk_tmp
+    [ "$oldRepo" != "$repo" ] && rm -f apk_tmp/index.xml
+    oldRepo="$repo"
+	if [ ! -f apk_tmp/index.xml ];then
+		#TODO: Check security keys
+		wget --connect-timeout=10 $repo/index.jar -O apk_tmp/index.jar
+		unzip -p apk_tmp/index.jar index.xml > apk_tmp/index.xml
+	fi
+	marketvercode="$(xmlstarlet sel -t -m '//application[id="'"$1"'"]' -v ./marketvercode apk_tmp/index.xml || true)"
+	apk="$(xmlstarlet sel -t -m '//application[id="'"$1"'"]/package[versioncode="'"$marketvercode"'"]' -v ./apkname apk_tmp/index.xml || xmlstarlet sel -t -m '//application[id="'"$1"'"]/package[1]' -v ./apkname apk_tmp/index.xml)"
+    if [ ! -f bin/$apk ];then
+        while ! wget --connect-timeout=10 $repo/$apk -O apk_bin/$apk;do sleep 1;done
+    fi
+    echo "$apk wird installiert: "
+    adb install apk_bin/$apk > /dev/null
+    sleep 1
+}
+
+# install from f-droid
+repo="https://f-droid.org/repo/"
+
+echo ""
+echo "remove AOSP keyboard and install anysoftkeyboard? y/n"
+read
+if [ "${REPLY}" = "y" ]; then 
+	if downloadFromRepo com.menny.android.anysoftkeyboard; then
+		echo "okay"
+		adb shell "su -c 'pm uninstall --user 0 com.android.inputdevices'"
+		adb shell "su -c 'pm uninstall --user 0 com.android.inputmethod.latin'"
+	fi
+fi
+
+echo ""
+echo "remove google-launcher and install Discreet-Launcher? y/n"
+read
+if [ "${REPLY}" = "y" ]; then 
+	if downloadFromRepo com.vincent_falzon.discreetlauncher; then
+		echo "okay"
+		adb shell "su -c 'pm uninstall --user 0 com.android.launcher3'"
+	fi
+fi
+
+echo "This install Apps from F-Droid."
+echo "--------------------------------------"
+echo ""
+
+#System
+downloadFromRepo org.fdroid.fdroid "F-Droid"
+#downloadFromRepo org.fdroid.fdroid.privileged "F-Droid-Privileged"
+downloadFromRepo com.machiav3lli.fdroid "Ein moderner F-Droid Client mit Material Design."
+downloadFromRepo me.phh.superuser "super user app"
+downloadFromRepo de.lukaspieper.gcam.services "Gcam Services Provider"
+downloadFromRepo me.zhanghai.android.files "material files manager"
+downloadFromRepo at.bitfire.davdroid "davdroid"
+downloadFromRepo ws.xsoh.etar "calendar"
+downloadFromRepo com.github.cvzi.screenshottile "Screenshots"
+downloadFromRepo com.kunzisoft.keepass.libre "keepass"
+downloadFromRepo com.secuso.privacyFriendlyCodeScanner "qr scanner"
+downloadFromRepo com.github.catfriend1.syncthingandroid "syncthing"
+downloadFromRepo com.github.tmo1.sms_ie "sms backup"
+#downloadFromRepo net.redwarp.gifwallpaper "Dein Lieblings-GIF als Live Wallpaper"
+#downloadFromRepo com.chooloo.www.koler "Telefonanwendung mit anpassbaren Funktionen"
+downloadFromRepo com.darshancomputing.BatteryIndicator "Shows your battery charge level"
+downloadFromRepo org.fsociety.vernet "Vernet - Network Analyzer Host and Port scanner. Ping IP or domain."
+downloadFromRepo org.connectbot "An SSH and telnet client, and terminal emulator for local shell."
+downloadFromRepo de.lukaspieper.gcam.services "Gcam Services Provider (Basic)"
+downloadFromRepo com.oF2pks.kalturadeviceinfos "kDI Device Info system permission"
+downloadFromRepo us.spotco.malwarescanner "FOSS-Malwarescanner"
+downloadFromRepo org.eu.exodus_privacy.exodusprivacy "Tracker und Berechtigungen in Apps"
+downloadFromRepo net.kollnig.missioncontrol.fdroid "tracker control"
+
+# social
+downloadFromRepo eu.faircode.email "Fairmail"
+#downloadFromRepo security.pEp "Verschlüsselte E-Mails lesen und schreiben"
+downloadFromRepo com.twidere.twiderex "Nächste Generation von Twidere"
+#downloadFromRepo org.mariotaku.twidere "Twitter app"
+#downloadFromRepo com.jonjomckay.fritter "Fritter - Ein kostenloser, quelloffener Twitter-Client."
+downloadFromRepo com.plexer0.nitter "Nurlesender Twitter Client"
+downloadFromRepo nekox.messenger "telegram"
+downloadFromRepo com.keylesspalace.tusky "Mastodon"
+downloadFromRepo fr.gouv.etalab.mastodon "Mastodon"
+downloadFromRepo org.pixeldroid.app "Client for Pixelfed, the federated image sharing platform"
+
+# monocles
+#downloadFromRepo de.monocles.mail "monocles mail ist ein Fork von K-9 Mail"
+#downloadFromRepo de.monocles.chat "ist ein Open Source XMPP/Jabber Messenger für Android"
+#downloadFromRepo de.monocles.browser "Ein Browser, der Ihre Privatsphäre schützt."
+#downloadFromRepo de.monocles.translator "monocles translator ein sicherer und privater Übersetzer"
+
+# personal
+downloadFromRepo de.rki.covpass.app "covid pass"
+downloadFromRepo de.rki.covpass.checkapp "covid check"
+
+# media
+downloadFromRepo net.sourceforge.opencamera "Open Camera"
+downloadFromRepo io.github.muntashirakon.Music "Best material design music player for Android"
+#downloadFromRepo org.schabi.newpipe "UTube"
+downloadFromRepo org.videolan.vlc "vlc"
+downloadFromRepo de.christinecoenen.code.zapp "Zapp Mediathek"
+downloadFromRepo com.foobnix.pro.pdf.reader "Bookreader"
+downloadFromRepo de.ph1b.audiobook "audio-book reader"
+#downloadFromRepo com.github.axet.bookreader "Book reader with a simple UI"
+downloadFromRepo de.danoeh.antennapod "Podcast"
+downloadFromRepo de.freehamburger "Client-App für die Nachrichten"
+
+# browser
+#downloadFromRepo com.stoutner.privacybrowser.standard "Privacy Browser - Ein Browser, der Ihre Privatsphäre schützt"
+#downloadFromRepo threads.thor "Nativer IPFS and IPNS Browser welches auf WebKit-API basiert"
+downloadFromRepo org.mozilla.fennec_fdroid "Browser that supports current and anticipated web standards."
+#downloadFromRepo de.baumann.browser "FOSS Browser"
+#downloadFromRepo de.marmaro.krt.ffupdater "Updater für Firefox"
+#downloadFromRepo me.zhanghai.android.textselectionwebsearch "Add a \"Web search\" action to the text selection toolbar"
+downloadFromRepo com.example.deeplviewer "DeepL - inoffizielle Android App für den Deepl Translator"
+
+#trafic
+downloadFromRepo de.schildbach.oeffi "Bus und Bahn"
+downloadFromRepo net.osmand.plus "Landkarte, Navi"
+downloadFromRepo app.organicmaps "Open-source, community-driven maps for travelers, tourists, cyclists & hikers"
+downloadFromRepo org.woheller69.lavatories "LavSeeker zeigt Toiletten die in OpenStreetMap eingetragen sind"
+
+# game
+downloadFromRepo net.sourceforge.solitaire_cg "Solitaire"
+downloadFromRepo de.rwth_aachen.phyphox "Physik"
+
+# other
+downloadFromRepo de.moekadu.tuner "guitar tuner"
+#downloadFromRepo de.kaffeemitkoffein.tinyweatherforecastgermany "Nice Wetter, Widget"
+#downloadFromRepo de.reimardoeffinger.quickdic "Offline Woerterliste"
+downloadFromRepo de.nucleus.foss_warn "Erhalte Notfallbenachrichtigungen von warnung.bund.de oder alert.swiss"
+
+# shell
+#downloadFromRepo com.smartpack.busyboxinstaller "busybox installer"
+#downloadFromRepo ru.meefik.busybox "busybox"
+
+# simple tools
+#downloadFromRepo com.simplemobiletools.smsmessenger "simple sms"
+#downloadFromRepo com.simplemobiletools.filemanager.pro "simple dateimanager"
+#downloadFromRepo com.simplemobiletools.contacts.pro "simple Contacts"
+#downloadFromRepo com.simplemobiletools.gallery.pro "simple Gallery"
+#downloadFromRepo com.simplemobiletools.musicplayer "simple musicplayer"
+#downloadFromRepo com.simplemobiletools.clock "simple clock"
+#downloadFromRepo com.simplemobiletools.dialer "simple dialer"
+#downloadFromRepo com.simplemobiletools.calendar.pro "simple calendar"
+
+# others
+#downloadFromRepo com.termux "terminal"
+#downloadFromRepo com.termux.gui "GUI terminal"
+#downloadFromRepo org.smssecure.smssecure "SMS"
+#downloadFromRepo net.typeblog.shelter "Isolate your Big Brother Apps"
+#downloadFromRepo com.securefilemanager.app "dateimanager"
+#downloadFromRepo com.menny.android.anysoftkeyboard "anysoftkey"
+#downloadFromRepo com.qualcomm.location 
+#downloadFromRepo com.machiav3lli.backup "backup"
+#downloadFromRepo org.gateshipone.odyssey "Music Player"
+#downloadFromRepo com.simplemobiletools.filemanager.pro "dateimanager"
+#downloadFromRepo com.securefilemanager.app "dateimanager"
+#downloadFromRepo cx.vmx.sdcontacts "Kontakte offline sichern"
+#downloadFromRepo com.dosse.speedtest "Speedtest"
+
+
+echo "Install YouTube Viewer y/n"
+read
+if [ "${REPLY}" = "y" ]; then
+	repo=https://archive.newpipe.net/fdroid/repo/
+	downloadFromRepo org.schabi.newpipe "Schlanke YouTube-Oberfläche"
+fi	
+
+echo "Install Neo Launcher? y/n"
+read
+if [ "${REPLY}" = "y" ]; then
+	repo=https://apt.izzysoft.de/fdroid/repo
+	downloadFromRepo com.saggitt.omega "Neo 3 Launcher"
+fi
+	
+echo "Install microg? y/n"
+read
+if [ "${REPLY}" = "y" ]; then	
+	repo=https://microg.org/fdroid/repo/
+	downloadFromRepo com.google.android.gms
+	downloadFromRepo com.google.android.gsf
+	downloadFromRepo com.android.vending
+fi
+
+echo "Install Bromite? y/n"
+read
+if [ "${REPLY}" = "y" ]; then
+	repo=https://fdroid.bromite.org/fdroid/repo/
+	downloadFromRepo org.bromite.bromite "Browser2 QuickSearchBox"
+	downloadFromRepo org.bromite.webview "WebView webview"
+fi
+
+echo -e "\nInstall apss from local folder? \n"
+for file in ./Apps/*.apk
+	do
+		echo "install $file? y/n"
+		read
+		if [ "${REPLY}" = "y" ]; then
+			adb install $file
+		fi
+	done 
+
+rm -rf apk_tmp/ > /dev/null
+
+echo "Delete the downloaded apps? y/n"
+read
+if [ "${REPLY}" = "y" ]; then
+	rm -rf apk_bin/ > /dev/null
+fi
+
+echo "fine"
