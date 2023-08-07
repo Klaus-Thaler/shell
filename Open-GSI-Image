@@ -1,0 +1,93 @@
+#!/bin/bash
+# 
+# What do this?
+# - Download the current Lineage GSI image Vanilla and extract it.
+# - mount for editing
+# - Delete apps (see list in script)
+# - install System Apps (only Dummys!)
+# - Set up fdroid privileged
+# - repack image
+#Usage:
+#bash sudo OpenImage.sh Mountpoint[Variable/String] [/path/to/system/image] [DirName]
+
+if [ "$(whoami)" != "root" ]; then
+	echo "You are not root!!!"
+	echo "Usage:"
+	echo "sudo bash Only_Mount_GSI.GSI Arg: every GSI image"; exit
+fi
+
+if [ ! -e "$1" ]; then
+	echo "Error: No Image!"
+	echo "/path/to/system/image Faulty or Missing!"
+	exit
+fi
+
+read -p "Start. Continue: <ENTER> "
+
+date=$(date '+%Y-%m-%d')
+DirName="Dir_NEW"
+# if you have explicitly specified a name as an argument
+[ ! -z $2 ] && DirName=$2
+MountImg="/tmp/Mount_$2"
+Image="$1"
+BaseName="$(basename $Image .img)"
+NewImage="$date-$BaseName"
+
+mount_image () {
+	#cleanups
+	umount ${DirName} &> /dev/null
+	mkdir -p ${DirName}
+	simg2img $Image $MountImg.img || cp $Image $MountImg.imgg
+	e2fsck -n $MountImg.img &> /dev/null
+	if [ $? -eq 0 ]; then 
+		e2fsck -y -f $MountImg.img
+		resize2fs $MountImg.img 3500M
+		e2fsck -E unshare_blocks -y -f $MountImg.img
+		mount -o loop,rw $MountImg.img ${DirName}
+	fi
+
+	e2fsck -n $MountImg.imgg &> /dev/null
+	if [ $? -eq 0 ]; then 
+		e2fsck -y -f $MountImg.img
+		resize2fs $MountImg.imgg 3500M
+		e2fsck -E unshare_blocks -y -f $MountImg.imgg
+		mount -o loop,rw $MountImg.imgg ${DirName}
+	fi
+	}
+
+u_mount_image () {
+	#cleanups
+	umount $DirName &> /dev/null
+	rm -f $NewImage.img
+	touch $NewImage.img
+	
+	echo "Write changes? y/n"
+	read _change
+	if [ "$_change" != "y" ]; then exit; fi 
+		e2fsck -n $MountImg.img > /dev/null
+		if [ $? -eq 0 ]; then 
+			e2fsck -f -y $MountImg.img || true
+			resize2fs -M $MountImg.img
+			sleep 1
+			cp $MountImg.img $NewImage.img
+		fi
+		e2fsck -n $MountImg.imgg > /dev/null
+		if [ $? -eq 0 ]; then 
+			e2fsck -f -y $MountImg.imgg || true
+			resize2fs -M $MountImg.imgg
+			sleep 1
+			cp $MountImg.imgg $NewImage.img
+		fi
+	sleep 1
+	rm -f $MountImg.*
+	rm -r $DirName
+	echo ""
+	}
+
+mount_image
+
+nemo $DirName 2> /dev/null
+read -p "Control. <ENTER> "
+u_mount_image
+
+exit 0
