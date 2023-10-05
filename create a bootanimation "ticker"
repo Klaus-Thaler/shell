@@ -1,0 +1,92 @@
+#!/bin/sh
+# 
+# create a bootanimation for android
+# a text is running
+# for example a log
+# 
+# usage: 
+# bash createPics.sh [size: width x hight] [background: color] [font: color] [text]
+#
+# https://linux.die.net/man/1/convert
+
+Size=$1
+BG_Color=$2
+F_Color=$3
+text="$4"
+
+# defaults
+# link zu monospace o.a.
+F_Font="helvetica"
+F_Size="34"
+gravity="NorthWest"
+gravity="North"
+
+if [ ! $# -eq 4 ]; then 
+	Size="540x540"
+	BG_Color="black"
+	F_Size="22"
+	F_Color="teal"
+	text=$(cat ./text)
+fi
+
+# create dir part0
+rm -r part0
+mkdir -p part0
+
+# create pictures
+Z=0
+txtrows=$(printf "$text" |wc -l)
+maxRows=24
+
+# mit leeren zeilen auslaufen lassen
+i=24
+while [ $i -gt 0 ]; do
+	i=$(($i - 1))
+	text="$text\n"
+done
+
+txt=""
+printf "$text" | 
+while read row;	do
+		Z=$(($Z + 1))
+		txt="$txt\n$row"
+		# lange zeilen begrenzen
+		[ $(echo "$row" |wc -c) -gt 48 ] && row="$(echo "$row" |cut -c1-44) ...";
+		# langer text (maxRows) dann erste zeile loeschen
+		[ $Z -gt $maxRows ] && txt=$(printf "$txt\n" | sed '1d')
+		# bilder ereugen
+		convert -size $Size -background $BG_Color \
+		-font $F_Font -fill $F_Color -pointsize $F_Size \
+        -gravity $gravity \
+        label:"$txt" part0/${Z}_p.png
+	done
+
+# nullen vor einstellige zahlen 
+# da sonst die bootanimation nicht richtig sortiert
+cd part0
+for file in *; do
+	echo "$file ist $(file --mime-type $file)"	
+	# Nullen voran	
+	i=${#file}
+	cfile=$file
+	while [ $i -le 8 ]; do
+		new="0$cfile"
+		mv -f $cfile $new
+		cfile=$new
+		i=$(($i + 1))
+	done
+done
+
+cd  ..
+
+# bootanimation. zip erzeugen
+w=$(identify -format "%w" "part0/$(ls part0/ | tail -1)")
+h=$(identify -format "%h" "part0/$(ls part0/ | tail -1)")
+touch desc.txt
+echo "$w $h $fps" > desc.txt
+echo "p 0 0 part0" >> desc.txt
+zip -r -0 bootanimation.zip desc.txt part0
+	
+convert -delay 25 -loop 0 `ls -tr part0/*.png` animation.gif
+
+exit 0
