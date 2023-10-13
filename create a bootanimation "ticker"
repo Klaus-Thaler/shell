@@ -1,71 +1,134 @@
-#!/bin/sh
+#!/bin/bash
 # 
 # create a bootanimation for android
 # a text is running
-# for example a log
 # 
 # usage: 
-# bash createPics.sh [size: width x hight] [background: color] [font: color] [text]
+# bash createPics.sh 
+#			-[size: width x hight]
+#			-[background: color]
+#			-[font: color]
+#			-[gravity: center]
+#			-[font: size]
+#			-[text]
 #
 # https://linux.die.net/man/1/convert
 
-Size=$1
-BG_Color=$2
-F_Color=$3
-text="$4"
+# sample text
+cat << EOF > text
+<span size='42pt' color='red' underline='single' \
+weight='bold' face='times new roman'>Der Clown</span>
+
+Gib dem Clown
+nicht die Schuld dafür,
+dass er sich wie
+ein Clown benimmt
+<stop value='6'>
+<minus value='2'>
+<stop value='2'>
+<minus value='5'>
+frag dich lieber,
+warum du noch immer
+in den Zirkus gehst!
+<stop value='6'>
+<blank>
+more infos:
+klaus.thaler @ github
+<stop value='6'>
+<minus value='3'>
+EOF
 
 # defaults
 # link zu monospace o.a.
 F_Font="helvetica"
-F_Size="34"
+
+# command +args
+Size=$1
+BG_Color=$2
+F_Color=$3
+text="$4"
 gravity="NorthWest"
 gravity="North"
+#gravity="Center"
 
-if [ ! $# -eq 4 ]; then 
+if [ ! $# -eq 6 ]; then 
 	Size="540x540"
+	BG_Color="#2a1d16"
 	BG_Color="black"
-	F_Size="22"
-	F_Color="teal"
-	#text=$(cat ./text)
-	text="Gib dem Clown\nnicht die Schuld dafür,\ndass er sich wie\nein Clown benimmt\n –\nfrag dich lieber,\nwarum du noch immer\nin den Zirkus gehst!"
-
+	F_Size="26"
+	F_Color="white"
+	text=$(cat ./text)
+	gravity="NorthEast"
+	#gravity="North"
+	gravity="center"
 fi
 
 # create dir part0
-rm -r part0
+rm -rf part*
 mkdir -p part0
+Part="part0"
+rm -f bootanimation.zip
 
-# create pictures
-Z=0
-txtrows=$(printf "$text" |wc -l)
-maxRows=24
-
-# mit leeren zeilen auslaufen lassen
-i=24
-while [ $i -gt 0 ]; do
-	i=$(($i - 1))
-	text="$text\n"
-done
-
-txt=""
-printf "$text" | 
-while read row;	do
-		Z=$(($Z + 1))
-		txt="$txt\n$row"
-		# lange zeilen begrenzen
-		[ $(echo "$row" |wc -c) -gt 48 ] && row="$(echo "$row" |cut -c1-44) ...";
-		# langer text (maxRows) dann erste zeile loeschen
-		[ $Z -gt $maxRows ] && txt=$(printf "$txt\n" | sed '1d')
-		# bilder ereugen
-		convert -size $Size -background $BG_Color \
+IM_convert() {
+	# IM_convert [text] [bild]
+	convert -size $Size -background $BG_Color -gravity $gravity \
 		-font $F_Font -fill $F_Color -pointsize $F_Size \
-        -gravity $gravity \
-        label:"$txt" part0/${Z}_p.png
-	done
+        pango:"$1" $2
+}
+
+IM_composite() {
+	# IM_composite [schaerfe] [Background] [orinal Bild] [neues Bild]
+		composite -gravity center -dissolve $1 \
+		-geometry +0+0 "$2" $3 $4
+}
+
+# https://im.snibgo.com/pango.htm
+# create pictures
+R=0 # zaehler tatsaechliche zeilen im text
+Z=0 # zaehler fuer ausgabe zeilen
+txtrows=$(printf "$text" |wc -l)
+maxRows=32
+txt=""
+echo "$text" | 
+while read row;	do
+	# lange zeilen begrenzen
+	#[ $(echo "$row" |wc -c) -gt $(($F_Size * 3)) ] && row="$(echo "$row" |cut -c1-$(($F_Size * 3)))";
+	# maximal angezeigte Zeilen
+	[ $R -gt $maxRows ] && txt=$(printf "$txt\n" | sed '1d')
+	# sample: <stop value='3'> or <minus value='2'> in text
+	case "$row" in
+		"<minus value='"*"'"* )
+			val=$(echo "$row" |tr -dc "[0-9]")
+			for (( c=0; c<$val; c++ )); do
+				txt=$(printf "$txt" | sed '1d')
+				IM_convert "$txt" ${Part}/${Z}_p.png
+				Z=$(($Z + 1))
+			done
+			;;
+		"<stop value='"*"'>"* )
+			val=$(echo "$row" |tr -dc "[0-9]")
+			for (( c=0; c<$val; c++ )); do
+				IM_convert "$txt" ${Part}/${Z}_p.png
+				Z=$(($Z + 1))
+			done
+			;;
+		"<blank>"* )
+			txt=""
+			IM_convert "$txt" ${Part}/${Z}_p.png
+			Z=$(($Z + 1))
+			;;
+		*)
+			txt="$txt\n$row"
+			IM_convert "$txt" ${Part}/${Z}_p.png
+			Z=$(($Z + 1))
+			;;
+	esac
+	R=$(($R + 1))
+done
 
 # nullen vor einstellige zahlen 
 # da sonst die bootanimation nicht richtig sortiert
-cd part0
+cd ${Part}
 for file in *; do
 	echo "$file ist $(file --mime-type $file)"	
 	# Nullen voran	
@@ -78,17 +141,33 @@ for file in *; do
 		i=$(($i + 1))
 	done
 done
+cd ..
 
-cd  ..
+# Bild im Hintergrund
+BG_Pic="bg_picture.png"
+if [ -f $BG_Pic ]; then
+	mkdir -p part1
+	cd ${Part}
+	#C_Files=$(ls |wc -l)
+	dis=30
+	for pic in *.png; do
+		#[ $dis -gt 50 ] && dis=25
+		IM_composite 25 "../$BG_Pic" $pic ../part1/$pic
+	done
+	cd ..
+	Part="part1"
+fi
 
 # bootanimation. zip erzeugen
-w=$(identify -format "%w" "part0/$(ls part0/ | tail -1)")
-h=$(identify -format "%h" "part0/$(ls part0/ | tail -1)")
+w=$(identify -format "%w" "${Part}/$(ls ${Part}/ | tail -1)")
+h=$(identify -format "%h" "${Part}/$(ls ${Part}/ | tail -1)")
 touch desc.txt
 echo "$w $h $fps" > desc.txt
-echo "p 0 0 part0" >> desc.txt
-zip -r -0 bootanimation.zip desc.txt part0
+echo "p 0 0 ${Part}" >> desc.txt
+zip -r -0 bootanimation.zip desc.txt ${Part}
 	
-convert -delay 25 -loop 0 `ls -tr part0/*.png` animation.gif
+convert -delay 45 -loop 0 `ls -tr ${Part}/*.png` animation.gif
+
+firefox animation.gif
 
 exit 0
